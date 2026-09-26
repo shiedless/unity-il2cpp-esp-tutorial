@@ -3,10 +3,10 @@
 <p align="center">how to build a native objc esp for a unity il2cpp game on ios — the whole path, from a dump to lines on screen</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/engine-Unity%20IL2CPP-black">
-  <img src="https://img.shields.io/badge/platform-iOS-black">
-  <img src="https://img.shields.io/badge/ui-UIKit%20%2F%20CoreGraphics-black">
-  <img src="https://img.shields.io/badge/no-ImGui-black">
+  <img src="https://img.shields.io/badge/engine-Unity%20IL2CPP-C7192E?style=for-the-badge" alt="engine">
+  <img src="https://img.shields.io/badge/platform-iOS-000000?style=for-the-badge" alt="platform">
+  <img src="https://img.shields.io/badge/ui-UIKit%20%2F%20CoreGraphics-1f6feb?style=for-the-badge" alt="ui">
+  <img src="https://img.shields.io/badge/no-ImGui-2ea043?style=for-the-badge" alt="no imgui">
 </p>
 
 ---
@@ -17,8 +17,38 @@ top with uikit. no imgui, no reading the framebuffer, no drawing hooks. it reads
 like a real app because it is one — a transparent view on a display link.
 
 the examples are shaped like a real target (a photon multiplayer game with a
-`CharacterMotor` player class), but every step is the same for any il2cpp title.
-you swap the class names and offsets for yours.
+`CharacterMotor` player class), but every step is the same for any il2cpp title. you
+swap the class names and offsets for yours.
+
+---
+
+## the whole path
+
+```mermaid
+flowchart LR
+    dump["dump.cs<br/>Il2CppDumper"] --> cls["1 · player class<br/>offsets"]
+    cls --> list["2 · player list<br/>+ local player"]
+    list --> methods["3 · unity methods<br/>W2S · get_position"]
+    methods --> il2cpp["4 · il2cpp layer<br/>module + static instance"]
+    il2cpp --> read["5 · read players<br/>into plain structs"]
+    read --> draw["6 · project & draw<br/>UIView / CoreGraphics"]
+
+    style dump fill:#000,color:#fff
+    style il2cpp fill:#C7192E,color:#fff
+    style draw fill:#1f6feb,color:#fff
+```
+
+## contents
+
+- [what you need first](#what-you-need-first)
+- [step 1 — find the player class](#step-1--find-the-player-class)
+- [step 2 — find the player list and the local player](#step-2--find-the-player-list-and-the-local-player)
+- [step 3 — the two unity methods you must call](#step-3--the-two-unity-methods-you-must-call)
+- [step 4 — the il2cpp layer](#step-4--the-il2cpp-layer)
+- [step 5 — read the players into plain structs](#step-5--read-the-players-into-plain-structs)
+- [step 6 — project and draw](#step-6--project-and-draw)
+- [the one rule that keeps it stable](#the-one-rule-that-keeps-it-stable)
+- [where to go next](#where-to-go-next)
 
 ---
 
@@ -27,12 +57,14 @@ you swap the class names and offsets for yours.
 a **dump** of the game. run [Il2CppDumper](https://github.com/Perfare/Il2CppDumper)
 against the decrypted binary and its `global-metadata.dat`. you get:
 
-- `dump.cs` — every managed class, its fields with **offsets**, its methods with
-  **RVAs**. this is the whole map.
-- `il2cpp.h`, `script.json` — types and method addresses, useful later.
+| file | what's in it |
+|------|--------------|
+| `dump.cs` | every managed class, its fields with **offsets**, its methods with **RVAs** — the whole map |
+| `il2cpp.h` | reconstructed types |
+| `script.json` | method addresses, useful later |
 
-everything below comes out of `dump.cs`. you do not need the source, and you
-rarely need a disassembler — the dump already tells you where every field lives.
+everything below comes out of `dump.cs`. you do not need the source, and you rarely
+need a disassembler — the dump already tells you where every field lives.
 
 ---
 
@@ -41,12 +73,12 @@ rarely need a disassembler — the dump already tells you where every field live
 grep the dump for the class that represents a live player. it's the one that has
 health, a team, and implements a damage interface:
 
-```
+```bash
 grep -nE 'class .*(Player|Character|Motor|Pawn) ' dump.cs
 ```
 
-in the example it's `CharacterMotor`. open it in `dump.cs` and read the field
-offsets straight off the comments:
+in the example it's `CharacterMotor`. read the field offsets straight off the
+comments:
 
 ```cs
 public class CharacterMotor : MonoBehaviourPun, IDestroyable {
@@ -77,7 +109,7 @@ write these down. they become your constants.
 there's almost always a game-controller singleton holding a `List<T>` of players.
 grep for it:
 
-```
+```bash
 grep -nE 'List<CharacterMotor>|static .*instance' dump.cs
 ```
 
@@ -89,17 +121,17 @@ public class GameController : MonoBehaviourPun {
 }
 ```
 
-`instance` is a **static** field — you reach it through the il2cpp runtime (step
-4). `Players` is your iteration source; `OurPlayer` is the local player, for
-distance and for skipping yourself.
+`instance` is a **static** field — you reach it through the il2cpp runtime (step 4).
+`Players` is your iteration source; `OurPlayer` is the local player, for distance and
+for skipping yourself.
 
 ---
 
 ## step 3 — the two unity methods you must call
 
 you need world → screen, and you need each object's world position. don't
-reimplement them — call the game's own, which the dump exposes as
-**`_Injected`** variants with a fixed calling convention:
+reimplement them — call the game's own, which the dump exposes as **`_Injected`**
+variants with a fixed calling convention:
 
 ```cs
 // Transform
@@ -112,8 +144,8 @@ private static void WorldToScreenPoint_Injected(IntPtr self,
 public  Transform get_transform();                                         // RVA 0x699F904
 ```
 
-the injected convention is: `self` pointer first, value types passed by pointer,
-the return written through an out-pointer. in c++ that's:
+the injected convention is: `self` pointer first, value types passed by pointer, the
+return written through an out-pointer. in c++ that's:
 
 ```cpp
 using GetPositionFn = void (*)(void* self, Vector3* out);
@@ -129,8 +161,20 @@ resolve them as `moduleBase + RVA`.
 
 two jobs: find the module, and reach that static `instance`.
 
-**module base.** the runtime and all game code live in `UnityFramework` on ios.
-match it in the loaded images:
+```mermaid
+flowchart TD
+    imgs["_dyld_image_count()<br/>loop loaded images"] -->|strstr "UnityFramework"| base["module base<br/>resolve(rva) = base + rva"]
+    dlsym["dlsym il2cpp_* exports"] --> attach["il2cpp_thread_attach"]
+    attach --> klass["il2cpp_class_from_name<br/>GameController"]
+    klass --> field["il2cpp_class_get_field_from_name<br/>instance"]
+    field --> val["il2cpp_field_static_get_value<br/>-> gameController ptr"]
+
+    style base fill:#C7192E,color:#fff
+    style val fill:#1f6feb,color:#fff
+```
+
+**module base.** the runtime and all game code live in `UnityFramework` on ios. match
+it in the loaded images:
 
 ```cpp
 for (uint32_t i = 0; i < _dyld_image_count(); i++) {
@@ -142,8 +186,8 @@ for (uint32_t i = 0; i < _dyld_image_count(); i++) {
 
 `resolve(rva)` is just `base + rva`.
 
-**static fields.** il2cpp exports a stable c api; pull the symbols with `dlsym`
-and walk to the field:
+**static fields.** il2cpp exports a stable c api; pull the symbols with `dlsym` and
+walk to the field:
 
 ```cpp
 // once, on any thread that will touch managed memory:
@@ -160,7 +204,7 @@ il2cpp_field_static_get_value(field, &gameController);
 cache the class and field; re-read the value each time (the instance can go null
 between rounds).
 
-> keep these symbol name strings out of plain sight — a compile-time string
+> **keep the symbol name strings out of plain sight.** a compile-time string
 > obfuscator (an `ENCRYPT("...")` macro) hides `il2cpp_*` and your class names so a
 > `strings` dump doesn't hand someone your whole method.
 
@@ -170,11 +214,11 @@ between rounds).
 
 now it's just pointer arithmetic. the standard il2cpp containers:
 
-```
-List<T>:  items ptr @ 0x10,  count @ 0x18
-Array:    elements begin @ 0x20
-String:   length @ 0x10,  UTF-16 chars @ 0x14
-```
+| container | layout |
+|-----------|--------|
+| `List<T>` | items ptr @ `0x10`, count @ `0x18` |
+| `Array` | elements begin @ `0x20` |
+| `String` | length @ `0x10`, UTF-16 chars @ `0x14` |
 
 so, per frame:
 
@@ -223,11 +267,11 @@ from the head/feet span you have everything:
 - **health** — a bar next to it, filled `hp / maxHp`.
 - **name / distance** — text at the top / bottom.
 - **skeleton** — the cheap, crash-proof way is to *synthesise* a stick figure in
-  screen space from head and feet (spine, shoulders, hips, arms, legs, sized to
-  the on-screen height). walking real bone transforms with `Transform.GetChild`
-  works, but it can throw a managed exception mid-frame when the rig reparents,
-  and that unwinds into the game and crashes — so unless you need exact poses,
-  draw the synthetic one.
+  screen space from head and feet (spine, shoulders, hips, arms, legs, sized to the
+  on-screen height). walking real bone transforms with `Transform.GetChild` works,
+  but it can throw a managed exception mid-frame when the rig reparents, and that
+  unwinds into the game and crashes — so unless you need exact poses, draw the
+  synthetic one.
 
 drawing is a transparent `UIView` over the game, redrawn every refresh:
 
@@ -256,14 +300,29 @@ add it to the app's key window a few seconds after launch, once the ui exists.
 
 ## the one rule that keeps it stable
 
-**a match is a moving target.** objects are pooled, freed and reparented while you
-read them. anything you do against game memory has to assume the object under your
-pointer can vanish or resize between two reads. two habits cover it:
+> **a match is a moving target.** objects are pooled, freed and reparented while you
+> read them. anything you do against game memory has to assume the object under your
+> pointer can vanish or resize between two reads.
+
+two habits cover it:
 
 1. gate every pointer with `plausible()` before dereferencing.
 2. wrap the whole per-frame build in `try { ... } catch (...) { emptyFrame; }` so a
    fault or a managed exception becomes a skipped frame, never an abort — the same
    reason any game function you *call* (not just read) goes in a try/catch too.
+
+```mermaid
+flowchart LR
+    frame["per-frame build"] --> gate{"plausible(ptr)?"}
+    gate -->|no| skip["skip this object"]
+    gate -->|yes| deref["read fields"]
+    deref -->|fault / managed<br/>exception| catch["catch (...)<br/>emit empty frame"]
+    catch --> alive["game stays up"]
+    deref -->|ok| alive
+
+    style catch fill:#C7192E,color:#fff
+    style alive fill:#2ea043,color:#fff
+```
 
 do both and the overlay rides through scene loads, deaths and disconnects without
 taking the game down with it.
@@ -280,5 +339,7 @@ taking the game down with it.
 
 the whole thing is: read the dump, resolve a module, walk a list, call two unity
 methods, draw. no engine, no protector to fight on ios, no source.
+
+---
 
 <p align="center">— shiedless</p>

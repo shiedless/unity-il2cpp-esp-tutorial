@@ -342,4 +342,10 @@ methods, draw. no engine, no protector to fight on ios, no source.
 
 ---
 
+<p align="center">
+  <sub><b>more from me:</b> <a href="https://github.com/shiedless/ios-ue4-re">ios-ue4-re</a> · <a href="https://github.com/shiedless/roblox-ios-luau-vm-notes">roblox-ios-luau-vm-notes</a> · <a href="https://github.com/shiedless/ios-messiah-re">ios-messiah-re</a> · <a href="https://github.com/shiedless/ida-pro-guide">ida-pro-guide</a> · <a href="https://github.com/shiedless/Reveal">Reveal</a></sub>
+</p>
+
+---
+
 <p align="center">— shiedless</p>

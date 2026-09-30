@@ -163,7 +163,7 @@ two jobs: find the module, and reach that static `instance`.
 
 ```mermaid
 flowchart TD
-    imgs["_dyld_image_count()<br/>loop loaded images"] -->|strstr "UnityFramework"| base["module base<br/>resolve(rva) = base + rva"]
+    imgs["_dyld_image_count()<br/>loop loaded images"] -->|strstr #quot;UnityFramework#quot;| base["module base<br/>resolve(rva) = base + rva"]
     dlsym["dlsym il2cpp_* exports"] --> attach["il2cpp_thread_attach"]
     attach --> klass["il2cpp_class_from_name<br/>GameController"]
     klass --> field["il2cpp_class_get_field_from_name<br/>instance"]
